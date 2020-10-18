@@ -1,0 +1,21 @@
+{{define "HEADER"}}
+<nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <a class="navbar-brand" href="/dashboard">DocViewer 0.1 by A. Markóczy</a>
+    <div class="collapse navbar-collapse" id="navbarNav">
+        <ul class="navbar-nav">
+            <li class="nav-item{{if eq .Header.ActivePage "dashboard"}} active{{end}}">
+                <a class="nav-link" href="/dashboard">Dashboard</span></a>
+            </li>
+            <li class="nav-item{{if eq .Header.ActivePage "todos"}} active{{end}}">
+                <a class="nav-link" href="/todos">TODOs</a>
+            </li>
+            <li class="nav-item{{if eq .Header.ActivePage "view"}} active{{end}}">
+                <a class="nav-link" href="/view">View Document</a>
+            </li>
+            <li class="nav-item{{if eq .Header.ActivePage "edit"}} active{{end}}"">
+                <a class=" nav-link" href="/edit">Edit Document</a>
+            </li>
+        </ul>
+    </div>
+</nav>
+{{end}}
