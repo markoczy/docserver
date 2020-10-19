@@ -85,7 +85,7 @@ func handleInitTemplate(activePage string) webapi.HandlerFunc {
 	}
 }
 
-func LoadDocument(name string) string {
+func loadDocument(name string) string {
 	content, err := ioutil.ReadFile("data/document/" + name + "/doc.md")
 	if err != nil {
 		panic(err)
@@ -114,7 +114,7 @@ func handleViewDocument(dbHandler db.Handler) webapi.HandlerFunc {
 			panic(err)
 		}
 		// Load content from file
-		content := LoadDocument(doc.Name())
+		content := loadDocument(doc.Name())
 		state := r.State.(*AppState)
 		state.Body = DocumentData{
 			Document: doc,
