@@ -9,6 +9,8 @@ import (
 
 	"github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/parser"
+	"github.com/markoczy/docserver/db"
+	"github.com/markoczy/docserver/types/document"
 	"github.com/markoczy/goutil/log"
 	"github.com/markoczy/webapi"
 )
@@ -26,6 +28,18 @@ type HeaderState struct {
 type MarkdownFile struct {
 	Filename string
 	Content  string
+}
+
+type DocumentData struct {
+	Document document.Document
+	Content  string
+}
+
+func must(fn func() error) {
+	var err error
+	if err = fn(); err != nil {
+		panic(err)
+	}
 }
 
 func recoverPanic(w http.ResponseWriter) {
@@ -54,7 +68,7 @@ func handleLogRequest(w http.ResponseWriter, r *webapi.ParsedRequest, next func(
 }
 
 // could be a way, currently unused
-func handleInitTemplate(activePage string) func(w http.ResponseWriter, r *webapi.ParsedRequest, next func() webapi.Handler) webapi.Handler {
+func handleInitTemplate(activePage string) webapi.HandlerFunc {
 	return func(w http.ResponseWriter, r *webapi.ParsedRequest, next func() webapi.Handler) webapi.Handler {
 		defer recoverPanic(w)
 		tmpl := template.Must(template.ParseFiles(
@@ -71,24 +85,10 @@ func handleInitTemplate(activePage string) func(w http.ResponseWriter, r *webapi
 	}
 }
 
-// func handleHeaderTemplate(activePage string) func(w http.ResponseWriter, r *webapi.ParsedRequest, next func() webapi.Handler) webapi.Handler {
-// 	return func(w http.ResponseWriter, r *webapi.ParsedRequest, next func() webapi.Handler) webapi.Handler {
-// 		defer recoverPanic(w)
-// 		state := r.State.(AppState)
-// 		if state.Template == nil {
-// 			panic(fmt.Errorf("Main Template is missing"))
-// 		}
-
-// 		return next()
-// 	}
-// }
-
-func LoadDocument(document string) MarkdownFile {
-	ret := MarkdownFile{}
-	content, err := ioutil.ReadFile("data/document/" + document + "/doc.md")
+func LoadDocument(name string) string {
+	content, err := ioutil.ReadFile("data/document/" + name + "/doc.md")
 	if err != nil {
 		panic(err)
-		// return ret, err
 	}
 
 	// Fix Windows Linebreaks
@@ -99,24 +99,36 @@ func LoadDocument(document string) MarkdownFile {
 	parser := parser.NewWithExtensions(extensions)
 	html := markdown.ToHTML(content, parser, nil)
 
-	ret.Content = string(html)
-	// _, file := filepath.Split(path)
-	ret.Filename = document
-	return ret
+	return string(html)
 }
 
-func handleViewDocument(w http.ResponseWriter, r *webapi.ParsedRequest, next func() webapi.Handler) webapi.Handler {
-	defer recoverPanic(w)
-	filename := r.PathParams["file"]
-	mdData := LoadDocument(filename)
-	state := r.State.(*AppState)
-	state.Body = mdData
+func handleViewDocument(dbHandler db.Handler) webapi.HandlerFunc {
+	return func(w http.ResponseWriter, r *webapi.ParsedRequest, next func() webapi.Handler) webapi.Handler {
+		defer recoverPanic(w)
+		var err error
+		var doc document.Document
+		uuid := r.PathParams["uuid"]
 
-	tmpl := template.Must(state.Template.ParseFiles(
-		"data/template/viewer.html",
-	))
-	tmpl.Execute(w, state)
-	return next()
+		// Load data from db
+		if doc, err = dbHandler.ReadDocument(uuid); err != nil {
+			panic(err)
+		}
+		// Load content from file
+		content := LoadDocument(doc.Name())
+		state := r.State.(*AppState)
+		state.Body = DocumentData{
+			Document: doc,
+			Content:  content,
+		}
+
+		tmpl := template.Must(state.Template.ParseFiles(
+			"data/template/viewer.html",
+		))
+		if err = tmpl.Execute(w, state); err != nil {
+			panic(err)
+		}
+		return next()
+	}
 }
 
 func testPanic(w http.ResponseWriter, r *webapi.ParsedRequest, next func() webapi.Handler) (ret webapi.Handler) {
@@ -131,14 +143,18 @@ func testPanic(w http.ResponseWriter, r *webapi.ParsedRequest, next func() webap
 }
 
 func main() {
-	fallback404 := webapi.NewErrorHandler(http.StatusNotFound, "Page not found")
+	// Init DB
+	dbHandler := db.NewHandler("data/store/store.db")
+	must(func() error { return dbHandler.Init() })
+	must(func() error { return dbHandler.ProcessUpdates() })
+
 	// Create Router
+	fallback404 := webapi.NewErrorHandler(http.StatusNotFound, "Page not found")
 	router := webapi.NewRouter(fallback404)
-	// Create Handler by chaining Handler functions
 	handleView := webapi.NewHandler(
 		handleLogRequest,
 		handleInitTemplate("view"),
-		handleViewDocument,
+		handleViewDocument(dbHandler),
 	)
 
 	assetServer := http.FileServer(http.Dir("./data/asset"))
@@ -151,7 +167,7 @@ func main() {
 	)
 
 	router.Handle(http.MethodGet, "/view", handleView)
-	router.Handle(http.MethodGet, "/view/:file", handleView)
+	router.Handle(http.MethodGet, "/view/:uuid", handleView)
 	router.Handle(http.MethodGet, "/testPanic", webapi.NewHandler(testPanic))
 	router.Handle(http.MethodGet, "/(.*)", handleAsset)
 	// Serve HTTP
