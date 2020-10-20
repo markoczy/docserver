@@ -5,8 +5,7 @@ import (
 	"time"
 
 	"github.com/bvinc/go-sqlite-lite/sqlite3"
-	"github.com/markoczy/docserver/types/document"
-	"github.com/pkg/errors"
+	"github.com/markoczy/docserver/domain/document"
 )
 
 const querySelectDocument = `SELECT id, uuid, name, created, last_modified FROM document WHERE uuid = ?`
@@ -14,58 +13,23 @@ const queryInsertDocument = `INSERT INTO document(uuid, name, created, last_modi
 const queryUpdateDocument = `UPDATE document SET name = ?, created = ?, last_modified = ? WHERE id = ?`
 const queryDeleteDocument = `DELETE FROM document WHERE uuid = ?`
 
-type Handler interface {
-	Init() error
-	Close() error
-	ProcessUpdates() error
-	// CRUD For document
-	CreateDocument(doc document.Document) error
-	ReadDocument(uuid string) (document.Document, error)
-	UpdateDocument(doc document.Document) error
-	DeleteDocument(uuid string) error
+func Connect(file string) (*sqlite3.Conn, error) {
+	return sqlite3.Open(file)
 }
 
-func NewHandler(file string) Handler {
-	return &dbHandler{
-		file: file,
+func MustConnect(file string) *sqlite3.Conn {
+	conn, err := sqlite3.Open(file)
+	if err != nil {
+		panic(err)
 	}
+	return conn
 }
 
-type dbHandler struct {
-	file string
-	conn *sqlite3.Conn
-}
-
-func (db *dbHandler) Init() error {
-	var err error
-	db.conn, err = sqlite3.Open(db.file)
-	return err
-}
-
-func (db *dbHandler) Close() error {
-	if db.conn != nil {
-		return db.conn.Close()
-	}
-	return nil
-}
-
-func (db *dbHandler) ProcessUpdates() error {
-	for k, v := range dbUpdates {
-		err := db.conn.WithTx(func() error {
-			return db.conn.Exec(v)
-		})
-		if err != nil {
-			return errors.Wrap(err, fmt.Sprintf("Failed to process update %s", k))
-		}
-	}
-	return nil
-}
-
-func (db *dbHandler) CreateDocument(doc document.Document) error {
-	return db.conn.WithTx(func() error {
+func CreateDocument(conn *sqlite3.Conn, doc document.Document) error {
+	return conn.WithTx(func() error {
 		var err error
 		var stmt *sqlite3.Stmt
-		if stmt, err = db.conn.Prepare(queryInsertDocument); err != nil {
+		if stmt, err = conn.Prepare(queryInsertDocument); err != nil {
 			return err
 		}
 		defer stmt.Close()
@@ -77,15 +41,15 @@ func (db *dbHandler) CreateDocument(doc document.Document) error {
 	})
 }
 
-func (db *dbHandler) ReadDocument(uuid string) (document.Document, error) {
+func ReadDocument(conn *sqlite3.Conn, uuid string) (document.Document, error) {
 	var doc document.Document
-	err := db.conn.WithTx(func() error {
+	err := conn.WithTx(func() error {
 		var (
 			err    error
 			stmt   *sqlite3.Stmt
 			hasRow bool
 		)
-		if stmt, err = db.conn.Prepare(querySelectDocument); err != nil {
+		if stmt, err = conn.Prepare(querySelectDocument); err != nil {
 			return err
 		}
 		defer stmt.Close()
@@ -99,17 +63,17 @@ func (db *dbHandler) ReadDocument(uuid string) (document.Document, error) {
 		if !hasRow {
 			return fmt.Errorf("No record found for uuid %s", uuid)
 		}
-		doc, err = db.readDocument(stmt)
+		doc, err = readDocument(stmt)
 		return err
 	})
 	return doc, err
 }
 
-func (db *dbHandler) UpdateDocument(doc document.Document) error {
-	return db.conn.WithTx(func() error {
+func UpdateDocument(conn *sqlite3.Conn, doc document.Document) error {
+	return conn.WithTx(func() error {
 		var err error
 		var stmt *sqlite3.Stmt
-		if stmt, err = db.conn.Prepare(queryUpdateDocument); err != nil {
+		if stmt, err = conn.Prepare(queryUpdateDocument); err != nil {
 			return err
 		}
 		defer stmt.Close()
@@ -121,11 +85,11 @@ func (db *dbHandler) UpdateDocument(doc document.Document) error {
 	})
 }
 
-func (db *dbHandler) DeleteDocument(uuid string) error {
-	return db.conn.WithTx(func() error {
+func DeleteDocument(conn *sqlite3.Conn, uuid string) error {
+	return conn.WithTx(func() error {
 		var err error
 		var stmt *sqlite3.Stmt
-		if stmt, err = db.conn.Prepare(queryDeleteDocument); err != nil {
+		if stmt, err = conn.Prepare(queryDeleteDocument); err != nil {
 			return err
 		}
 		defer stmt.Close()
@@ -137,7 +101,7 @@ func (db *dbHandler) DeleteDocument(uuid string) error {
 	})
 }
 
-func (db *dbHandler) readDocument(stmt *sqlite3.Stmt) (doc document.Document, err error) {
+func readDocument(stmt *sqlite3.Stmt) (doc document.Document, err error) {
 	var (
 		id, created, lastModified int64
 		uuid, name                string
