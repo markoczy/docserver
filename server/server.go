@@ -14,6 +14,7 @@ import (
 	"github.com/markoczy/docserver/db"
 	"github.com/markoczy/docserver/domain/document"
 	"github.com/markoczy/webapi"
+	"github.com/pkg/errors"
 )
 
 type AppState struct {
@@ -32,14 +33,10 @@ type DocumentData struct {
 }
 
 func InitViewController(router *webapi.Router, conn *sqlite3.Conn) error {
-	// init parser
-	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
-	parser := parser.NewWithExtensions(extensions)
-
 	handleView := webapi.NewHandler(
 		handleLogRequest,
 		handleInitTemplate("view"),
-		handleViewDocument(conn, parser),
+		handleViewDocument(conn),
 	)
 	router.Handle(http.MethodGet, "/view/:uuid", handleView)
 	return nil
@@ -88,7 +85,7 @@ func handleInitTemplate(activePage string) webapi.HandlerFunc {
 	}
 }
 
-func handleViewDocument(conn *sqlite3.Conn, parser *parser.Parser) webapi.HandlerFunc {
+func handleViewDocument(conn *sqlite3.Conn) webapi.HandlerFunc {
 	return func(w http.ResponseWriter, r *webapi.ParsedRequest, next func() webapi.Handler) webapi.Handler {
 		defer recoverPanic(w)
 		var err error
@@ -100,7 +97,7 @@ func handleViewDocument(conn *sqlite3.Conn, parser *parser.Parser) webapi.Handle
 			panic(err)
 		}
 		// Load content from file
-		content := loadDocumentAsHtml(doc.Name(), parser)
+		content := loadDocumentAsHtml(doc.Name())
 		state := r.State.(*AppState)
 		state.Body = DocumentData{
 			Document: doc,
@@ -125,15 +122,19 @@ func recoverPanic(w http.ResponseWriter) {
 }
 
 func replaceLineBreaks(text string) string {
-	re := regexp.MustCompile(`\x{000D}\x{000A}|[\x{000A}\x{000B}\x{000C}\x{000D}\x{0085}\x{2028}\x{2029}]`)
+	re := regexp.MustCompile(`\r?\n`)
 	return re.ReplaceAllString(text, "\n")
 }
 
-func loadDocumentAsHtml(name string, parser *parser.Parser) string {
+func loadDocumentAsHtml(name string) string {
 	content, err := ioutil.ReadFile("data/document/" + name + "/doc.md")
 	if err != nil {
-		panic(err)
+		panic(errors.Wrap(err, "Failed to load File:"+name))
 	}
+
+	// Init markdown parser (cannot be reused!)
+	extensions := parser.CommonExtensions | parser.AutoHeadingIDs
+	parser := parser.NewWithExtensions(extensions)
 
 	// Fix Windows Linebreaks
 	content = []byte(replaceLineBreaks(string(content)))

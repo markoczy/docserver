@@ -22,4 +22,5 @@ func main() {
 	server.InitViewController(router, conn)
 	server.InitAssetController(router)
 	http.ListenAndServe(":7890", router)
+	conn.Close()
 }
