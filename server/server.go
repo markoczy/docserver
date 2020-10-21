@@ -55,7 +55,6 @@ func InitAssetController(router *webapi.Router) {
 }
 
 func handleLogRequest(w http.ResponseWriter, r *webapi.ParsedRequest, next func() webapi.Handler) webapi.Handler {
-
 	log.Printf("Request: %s %s\n", r.Request.Method, r.Request.RequestURI)
 	return next()
 }
@@ -94,10 +93,10 @@ func handleViewDocument(conn *sqlite3.Conn) webapi.HandlerFunc {
 
 		// Load data from db
 		if doc, err = db.ReadDocument(conn, uuid); err != nil {
-			panic(err)
+			panic(errors.Wrap(err, "Failed to read document from DB"))
 		}
 		// Load content from file
-		content := loadDocumentAsHtml(doc.Name())
+		content := loadDocumentAsHtml(uuid)
 		state := r.State.(*AppState)
 		state.Body = DocumentData{
 			Document: doc,
@@ -126,10 +125,10 @@ func replaceLineBreaks(text string) string {
 	return re.ReplaceAllString(text, "\n")
 }
 
-func loadDocumentAsHtml(name string) string {
-	content, err := ioutil.ReadFile("data/document/" + name + "/doc.md")
+func loadDocumentAsHtml(uuid string) string {
+	content, err := ioutil.ReadFile("data/document/" + uuid + "/doc.md")
 	if err != nil {
-		panic(errors.Wrap(err, "Failed to load File:"+name))
+		panic(errors.Wrap(err, "Failed to load File: "+uuid))
 	}
 
 	// Init markdown parser (cannot be reused!)

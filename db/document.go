@@ -6,12 +6,17 @@ import (
 
 	"github.com/bvinc/go-sqlite-lite/sqlite3"
 	"github.com/markoczy/docserver/domain/document"
+	"github.com/pkg/errors"
 )
 
 const querySelectDocument = `SELECT id, uuid, name, created, last_modified FROM document WHERE uuid = ?`
 const queryInsertDocument = `INSERT INTO document(uuid, name, created, last_modified) VALUES (?, ?, ?, ?)`
 const queryUpdateDocument = `UPDATE document SET name = ?, created = ?, last_modified = ? WHERE id = ?`
 const queryDeleteDocument = `DELETE FROM document WHERE uuid = ?`
+
+const errPrepareFailed = "Failed to create PreparedStatement"
+const errExecuteFailed = "Failed to execute PreparedStatement"
+const errStepFailed = "Failed to step through result record"
 
 func Connect(file string) (*sqlite3.Conn, error) {
 	return sqlite3.Open(file)
@@ -30,12 +35,12 @@ func CreateDocument(conn *sqlite3.Conn, doc document.Document) error {
 		var err error
 		var stmt *sqlite3.Stmt
 		if stmt, err = conn.Prepare(queryInsertDocument); err != nil {
-			return err
+			return errors.Wrap(err, fmt.Sprintf("Failed to create Document: %s", errPrepareFailed))
 		}
 		defer stmt.Close()
 
 		if err = stmt.Exec(doc.Uuid(), doc.Name(), doc.Created(), doc.LastModified()); err != nil {
-			return err
+			return errors.Wrap(err, fmt.Sprintf("Failed to create Document: %s", errExecuteFailed))
 		}
 		return nil
 	})
@@ -50,15 +55,15 @@ func ReadDocument(conn *sqlite3.Conn, uuid string) (document.Document, error) {
 			hasRow bool
 		)
 		if stmt, err = conn.Prepare(querySelectDocument); err != nil {
-			return err
+			return errors.Wrap(err, fmt.Sprintf("Failed to read Document %s: %s", uuid, errPrepareFailed))
 		}
 		defer stmt.Close()
 
 		if err = stmt.Exec(uuid); err != nil {
-			return err
+			return errors.Wrap(err, fmt.Sprintf("Failed to read Document %s: %s", uuid, errExecuteFailed))
 		}
 		if hasRow, err = stmt.Step(); err != nil {
-			return err
+			return errors.Wrap(err, fmt.Sprintf("Failed to read Document %s: %s", uuid, errStepFailed))
 		}
 		if !hasRow {
 			return fmt.Errorf("No record found for uuid %s", uuid)
