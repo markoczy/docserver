@@ -17,28 +17,36 @@ import (
 	"github.com/pkg/errors"
 )
 
-type AppState struct {
-	Header   *HeaderState
+type model struct {
+	Header   *headerModel
 	Body     interface{}
 	Template *template.Template
 }
 
-type HeaderState struct {
+type headerModel struct {
 	ActivePage string
 }
 
-type DocumentData struct {
+type viewDocumentModel struct {
 	Document document.Document
 	Content  string
 }
 
+type viewDocumentsModel struct {
+	Documents []document.Document
+}
+
 func InitViewController(router *webapi.Router, conn *sqlite3.Conn) error {
-	handleView := webapi.NewHandler(
+	router.Handle(http.MethodGet, "/view", webapi.NewHandler(
+		handleLogRequest,
+		handleInitTemplate("view"),
+		handleViewDocuments(conn),
+	))
+	router.Handle(http.MethodGet, "/view/:uuid", webapi.NewHandler(
 		handleLogRequest,
 		handleInitTemplate("view"),
 		handleViewDocument(conn),
-	)
-	router.Handle(http.MethodGet, "/view/:uuid", handleView)
+	))
 	return nil
 }
 
@@ -74,11 +82,39 @@ func handleInitTemplate(activePage string) webapi.HandlerFunc {
 			"data/template/main.html",
 			"data/template/header.html",
 		))
-		r.State = &AppState{
+		r.State = &model{
 			Template: tmpl,
-			Header: &HeaderState{
+			Header: &headerModel{
 				ActivePage: activePage,
 			},
+		}
+		return next()
+	}
+}
+
+func handleViewDocuments(conn *sqlite3.Conn) webapi.HandlerFunc {
+	return func(w http.ResponseWriter, r *webapi.ParsedRequest, next func() webapi.Handler) webapi.Handler {
+		defer recoverPanic(w)
+		var err error
+		var docs []document.Document
+
+		// Load data from db
+		if docs, err = db.ReadDocuments(conn); err != nil {
+			panic(errors.Wrap(err, "Failed to read documents from DB"))
+		}
+		for _, v := range docs {
+			log.Printf("Doc: %v\n", v)
+		}
+		state := r.State.(*model)
+		state.Body = viewDocumentsModel{
+			Documents: docs,
+		}
+
+		tmpl := template.Must(state.Template.ParseFiles(
+			"data/template/view-documents.html",
+		))
+		if err = tmpl.Execute(w, state); err != nil {
+			panic(err)
 		}
 		return next()
 	}
@@ -97,14 +133,14 @@ func handleViewDocument(conn *sqlite3.Conn) webapi.HandlerFunc {
 		}
 		// Load content from file
 		content := loadDocumentAsHtml(uuid)
-		state := r.State.(*AppState)
-		state.Body = DocumentData{
+		state := r.State.(*model)
+		state.Body = viewDocumentModel{
 			Document: doc,
 			Content:  content,
 		}
 
 		tmpl := template.Must(state.Template.ParseFiles(
-			"data/template/viewer.html",
+			"data/template/view-document.html",
 		))
 		if err = tmpl.Execute(w, state); err != nil {
 			panic(err)

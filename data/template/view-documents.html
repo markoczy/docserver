@@ -1,0 +1,22 @@
+{{define "BODY"}}
+
+<div class="container-fluid">
+    <h1>Documents</h1>
+    <table class="table">
+        <tr>
+            <th scope="col">Name</th>
+            <th scope="col">Created</th>
+            <th scope="col">LastModified</th>
+        </tr>
+        {{range .Body.Documents}}
+        <tr>
+            <td><a href="/view/{{.Uuid}}">{{.Name}}</a></td>
+            <td>{{.Created}}</td>
+            <td>{{.LastModified}}</td>
+        </tr>
+        {{end}}
+    </table>
+
+</div>
+
+{{end}}
