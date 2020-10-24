@@ -1,0 +1,5 @@
+textarea.content-input {
+    resize: none;
+    width: 100%;
+    height: calc(100vh - 200px);
+}

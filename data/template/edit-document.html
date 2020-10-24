@@ -1,0 +1,13 @@
+{{define "BODY"}}
+
+<div class="container-fluid">
+    <form action="/document/save" method="POST">
+        <label for="content">Edit Content</label>
+        <input name="name" value="{{.Body.Document.Name}}">
+        <textarea name="content" class="content-input" cols="30" rows="10">{{.Body.Content}}</textarea>
+        <input type="hidden" name="uuid" id="uuid" value="{{.Body.Document.Uuid}}">
+        <input type="submit" class="btn btn-primary" value="Save">
+    </form>
+</div>
+
+{{end}}

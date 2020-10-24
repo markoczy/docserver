@@ -12,7 +12,7 @@ import (
 const querySelectDocuments = `SELECT id, uuid, name, created, last_modified FROM document`
 const querySelectDocument = `SELECT id, uuid, name, created, last_modified FROM document WHERE uuid = ?`
 const queryInsertDocument = `INSERT INTO document(uuid, name, created, last_modified) VALUES (?, ?, ?, ?)`
-const queryUpdateDocument = `UPDATE document SET name = ?, created = ?, last_modified = ? WHERE id = ?`
+const queryUpdateDocument = `UPDATE document SET name = ?, last_modified = ? WHERE uuid = ?`
 const queryDeleteDocument = `DELETE FROM document WHERE uuid = ?`
 
 const errPrepareFailed = "Failed to create PreparedStatement"
@@ -121,7 +121,7 @@ func UpdateDocument(conn *sqlite3.Conn, doc document.Document) error {
 		}
 		defer stmt.Close()
 
-		if err = stmt.Exec(doc.Name(), doc.Created(), doc.LastModified(), doc.Id()); err != nil {
+		if err = stmt.Exec(doc.Name(), doc.LastModified().Unix(), doc.Uuid()); err != nil {
 			return err
 		}
 		return nil

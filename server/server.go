@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"regexp"
 	"text/template"
+	"time"
 
 	"github.com/bvinc/go-sqlite-lite/sqlite3"
 	"github.com/gomarkdown/markdown"
@@ -32,26 +33,41 @@ type viewDocumentModel struct {
 	Content  string
 }
 
+type editDocumentModel struct {
+	Document document.Document
+	Content  string
+}
+
 type viewDocumentsModel struct {
 	Documents []document.Document
 }
 
-func InitViewController(router *webapi.Router, conn *sqlite3.Conn) error {
-	router.Handle(http.MethodGet, "/view", webapi.NewHandler(
+func InitDocumentController(router *webapi.Router, conn *sqlite3.Conn) error {
+	router.Handle(http.MethodGet, "/document", webapi.NewHandler(
 		handleLogRequest,
-		handleInitTemplate("view"),
+		handleInitTemplate("document"),
 		handleViewDocuments(conn),
 	))
-	router.Handle(http.MethodGet, "/view/:uuid", webapi.NewHandler(
+	router.Handle(http.MethodGet, "/document/:uuid/view", webapi.NewHandler(
 		handleLogRequest,
-		handleInitTemplate("view"),
+		handleInitTemplate("document"),
 		handleViewDocument(conn),
+	))
+	router.Handle(http.MethodGet, "/document/:uuid/edit", webapi.NewHandler(
+		handleLogRequest,
+		handleInitTemplate("document"),
+		handleEditDocument(conn),
+	))
+	router.Handle(http.MethodPost, "/document/save", webapi.NewHandler(
+		handleLogRequest,
+		handleSaveDocument(conn),
+		webapi.NewNativeHandlerFunc(http.RedirectHandler("/document", http.StatusFound)),
 	))
 	return nil
 }
 
 func InitAssetController(router *webapi.Router) {
-	assetServer := http.FileServer(http.Dir("./data/asset"))
+	assetServer := http.StripPrefix("/asset", http.FileServer(http.Dir("./data/asset")))
 	handleAsset := webapi.NewHandler(
 		handleLogRequest,
 		func(w http.ResponseWriter, r *webapi.ParsedRequest, next func() webapi.Handler) webapi.Handler {
@@ -59,7 +75,7 @@ func InitAssetController(router *webapi.Router) {
 			return next()
 		},
 	)
-	router.Handle(http.MethodGet, "/(.*)", handleAsset)
+	router.Handle(http.MethodGet, "/asset/(.*)", handleAsset)
 }
 
 func handleLogRequest(w http.ResponseWriter, r *webapi.ParsedRequest, next func() webapi.Handler) webapi.Handler {
@@ -149,6 +165,61 @@ func handleViewDocument(conn *sqlite3.Conn) webapi.HandlerFunc {
 	}
 }
 
+func handleEditDocument(conn *sqlite3.Conn) webapi.HandlerFunc {
+	return func(w http.ResponseWriter, r *webapi.ParsedRequest, next func() webapi.Handler) webapi.Handler {
+		defer recoverPanic(w)
+		var err error
+		var doc document.Document
+		uuid := r.PathParams["uuid"]
+
+		// Load data from db
+		if doc, err = db.ReadDocument(conn, uuid); err != nil {
+			panic(errors.Wrap(err, "Failed to read document from DB"))
+		}
+		// Load content from file
+		content := loadDocument(uuid)
+		state := r.State.(*model)
+		state.Body = editDocumentModel{
+			Document: doc,
+			Content:  content,
+		}
+
+		tmpl := template.Must(state.Template.ParseFiles(
+			"data/template/edit-document.html",
+		))
+		if err = tmpl.Execute(w, state); err != nil {
+			panic(err)
+		}
+
+		return next()
+	}
+}
+
+func handleSaveDocument(conn *sqlite3.Conn) webapi.HandlerFunc {
+	return func(w http.ResponseWriter, r *webapi.ParsedRequest, next func() webapi.Handler) webapi.Handler {
+		defer recoverPanic(w)
+		var err error
+		if err = r.Request.ParseForm(); err != nil {
+			panic(errors.Wrap(err, "Could not parse request form"))
+		}
+
+		uuid := r.Request.PostFormValue("uuid")
+		name := r.Request.PostFormValue("name")
+		content := r.Request.PostFormValue("content")
+		log.Printf("uuid: %s, name: %s", uuid, name)
+		doc := document.NewBuilder().
+			WithUuid(uuid).
+			WithName(name).
+			WithLastModified(time.Now()).
+			Build()
+		if err = db.UpdateDocument(conn, doc); err != nil {
+			panic(errors.Wrap(err, "Could not update document"))
+		}
+		saveDocument(uuid, content)
+		return next()
+	}
+}
+
 func recoverPanic(w http.ResponseWriter) {
 	if err := recover(); err != nil {
 		errStr := fmt.Sprintf("%v", err)
@@ -175,4 +246,19 @@ func loadDocumentAsHtml(uuid string) string {
 	content = []byte(replaceLineBreaks(string(content)))
 	html := markdown.ToHTML(content, parser, nil)
 	return string(html)
+}
+
+func loadDocument(uuid string) string {
+	content, err := ioutil.ReadFile("data/document/" + uuid + "/doc.md")
+	if err != nil {
+		panic(errors.Wrap(err, "Failed to load File: "+uuid))
+	}
+	return string(content)
+}
+
+func saveDocument(uuid, content string) {
+	var err error
+	if err = ioutil.WriteFile("data/document/"+uuid+"/doc.md", []byte(content), 0644); err != nil {
+		panic(errors.Wrap(err, "Failed to write File: "+uuid))
+	}
 }

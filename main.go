@@ -19,7 +19,7 @@ func main() {
 	// Create Router
 	fallback404 := webapi.NewErrorHandler(http.StatusNotFound, "XPage not found")
 	router := webapi.NewRouter(fallback404)
-	server.InitViewController(router, conn)
+	server.InitDocumentController(router, conn)
 	server.InitAssetController(router)
 	http.ListenAndServe(":7890", router)
 	conn.Close()

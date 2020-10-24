@@ -7,12 +7,16 @@
             <th scope="col">Name</th>
             <th scope="col">Created</th>
             <th scope="col">LastModified</th>
+            <th scope="col"></th>
+            <th scope="col"></th>
         </tr>
         {{range .Body.Documents}}
         <tr>
-            <td><a href="/view/{{.Uuid}}">{{.Name}}</a></td>
+            <td><a href="/document/{{.Uuid}}/view">{{.Name}}</a></td>
             <td>{{.Created}}</td>
             <td>{{.LastModified}}</td>
+            <td><a href="/document/{{.Uuid}}/view" class="btn btn-primary" role="button">View</a></td>
+            <td><a href="/document/{{.Uuid}}/edit" class="btn btn-primary" role="button">Edit</a></td>
         </tr>
         {{end}}
     </table>
